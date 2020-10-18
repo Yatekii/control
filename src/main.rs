@@ -2,10 +2,11 @@ use futures::executor::block_on;
 use imgui::*;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support;
-use implot::{Colormap, ImPlotRange, Plot, PlotLine};
+use implot::{Colormap, ImPlotRange, Plot, PlotFlags, PlotLine};
 use std::time::Instant;
 use winit::{
     dpi::LogicalSize,
+    dpi::PhysicalSize,
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::Window,
@@ -120,7 +121,6 @@ fn main() {
 
     let mut last_frame = Instant::now();
     let start = last_frame.clone();
-    let mut demo_open = true;
 
     let mut last_cursor = None;
 
@@ -200,25 +200,24 @@ fn main() {
                 let ui = imgui.frame();
                 let mut plot_ui = implot.get_plot_ui();
 
+                let ruda = ui.push_font(ruda);
+                let canvas_size =
+                    PhysicalSize::new(size.width as f32 + 0.0, size.height as f32 - 20.0);
+
                 {
-                    let window = imgui::Window::new(im_str!("Hello world"));
+                    ui.main_menu_bar(|| {
+                        ui.text(im_str!("Frametime: {:?}", delta_s));
+                    });
+
+                    let window = imgui::Window::new(im_str!("Plot 1"));
                     window
-                        .size([300.0, 100.0], Condition::FirstUseEver)
+                        .size(
+                            [canvas_size.width * 0.75, canvas_size.height * 0.5],
+                            Condition::Always,
+                        )
+                        .position([0.0, 0.0 + 20.0], Condition::Always)
                         .build(&ui, || {
-                            let ruda = ui.push_font(ruda);
-                            ui.text(im_str!("Hello world!"));
-                            ui.text(im_str!("This...is...imgui-rs on WGPU!"));
-                            ui.separator();
-                            let mouse_pos = ui.io().mouse_pos;
-                            ui.text(im_str!(
-                                "Mouse Position: ({:.1},{:.1})",
-                                mouse_pos[0],
-                                mouse_pos[1]
-                            ));
-                            ui.text(im_str!(
-                                "This header just plots a line with as little code as possible."
-                            ));
-                            let content_width = ui.window_content_region_width();
+                            let content_dimension = ui.content_region_avail();
 
                             let s = xdata.last().map(|v| *v).unwrap_or(0.0);
 
@@ -227,7 +226,7 @@ fn main() {
                             Plot::new("Simple line plot")
                                 // The size call could also be omitted, though the defaults don't consider window
                                 // width, which is why we're not doing so here.
-                                .size(content_width, 300.0)
+                                .size(content_dimension[0], content_dimension[1])
                                 .y_limits(
                                     &ImPlotRange {
                                         Min: -1.0,
@@ -242,21 +241,75 @@ fn main() {
                                     },
                                     Condition::Always,
                                 )
+                                .with_plot_flags(&PlotFlags::ANTIALIASED)
                                 .build(&mut plot_ui, || {
                                     PlotLine::new("legend label").plot(&xdata, &ydata);
                                 });
-                            ruda.pop(&ui);
                         });
 
-                    let window = imgui::Window::new(im_str!("Hello too"));
+                    let window = imgui::Window::new(im_str!("Plot 2"));
                     window
-                        .size([400.0, 200.0], Condition::FirstUseEver)
-                        .position([400.0, 200.0], Condition::FirstUseEver)
+                        .size(
+                            [canvas_size.width * 0.75, canvas_size.height * 0.5],
+                            Condition::Always,
+                        )
+                        .position([0.0, canvas_size.height * 0.5 + 20.0], Condition::Always)
                         .build(&ui, || {
-                            ui.text(im_str!("Frametime: {:?}", delta_s));
+                            let content_dimension = ui.content_region_avail();
+
+                            let s = xdata.last().map(|v| *v).unwrap_or(0.0);
+
+                            implot::set_colormap_from_preset(Colormap::Plasma, 1);
+                            domain::style_seaborn();
+                            Plot::new("Simple line plot")
+                                // The size call could also be omitted, though the defaults don't consider window
+                                // width, which is why we're not doing so here.
+                                .size(content_dimension[0], content_dimension[1])
+                                .y_limits(
+                                    &ImPlotRange {
+                                        Min: -1.0,
+                                        Max: 1.0,
+                                    },
+                                    Condition::FirstUseEver,
+                                )
+                                .x_limits(
+                                    &ImPlotRange {
+                                        Min: s - 20.0,
+                                        Max: s,
+                                    },
+                                    Condition::Always,
+                                )
+                                .with_plot_flags(&PlotFlags::ANTIALIASED)
+                                .build(&mut plot_ui, || {
+                                    PlotLine::new("legend label").plot(&xdata, &ydata);
+                                });
                         });
 
-                    ui.show_demo_window(&mut demo_open);
+                    let window = imgui::Window::new(im_str!("Term"));
+                    window
+                        .size(
+                            [canvas_size.width * 0.25, canvas_size.height],
+                            Condition::Always,
+                        )
+                        .position([canvas_size.width * 0.75, 20.0], Condition::Always)
+                        .build(&ui, || {
+                            let content_dimension = ui.content_region_avail();
+
+                            TabBar::new(im_str!("Text Channel")).build(&ui, || {
+                                if let Some(token) = TabItem::new(im_str!("Channel A")).begin(&ui) {
+                                    ChildWindow::new(im_str!("Console1")).build(&ui, || {
+                                        ui.text("TEST");
+                                        ui.text_colored([1.0, 0.0, 0.0, 1.0], "TEST");
+                                    });
+                                    token.end(&ui);
+                                }
+                                if let Some(token) = TabItem::new(im_str!("Channel B")).begin(&ui) {
+                                    token.end(&ui);
+                                }
+                            });
+                        });
+
+                    ruda.pop(&ui);
                 }
 
                 let mut encoder: wgpu::CommandEncoder =
