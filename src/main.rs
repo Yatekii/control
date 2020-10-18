@@ -97,6 +97,8 @@ fn main() {
         config: None,
     }]);
 
+    domain::style_ui(imgui.style_mut());
+
     let implot = implot::Context::create();
 
     //
