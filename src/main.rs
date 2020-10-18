@@ -227,8 +227,8 @@ fn main() {
                 let mut plot_ui = implot.get_plot_ui();
 
                 let ruda = ui.push_font(ruda);
-                let canvas_size =
-                    PhysicalSize::new(size.width as f32 + 0.0, size.height as f32 - 20.0);
+                let size = size.to_logical::<f32>(hidpi_factor);
+                let canvas_size = PhysicalSize::new(size.width + 0.0, size.height - 20.0);
 
                 {
                     ui.main_menu_bar(|| {

@@ -81,8 +81,6 @@ pub fn style_seaborn() {
 }
 
 pub fn style_ui(style: &mut Style) {
-    const IMPLOT_AUTO_COL: (f32, f32, f32, f32) = (0.0, 0.0, 0.0, -1.0);
-
     style.child_rounding = 3.0;
     style.grab_rounding = 0.0;
     style.window_rounding = 0.0;
