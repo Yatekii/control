@@ -127,6 +127,14 @@ fn main() {
     let mut xdata = vec![];
     let mut ydata = vec![];
 
+    struct LogEntry {
+        data: String,
+        color: [f32; 4],
+    }
+
+    let mut log = vec![];
+    let mut log_locked = false;
+
     // Event loop
     event_loop.run(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {
@@ -182,6 +190,22 @@ fn main() {
                 let elapsed = start.elapsed().as_secs_f64();
                 xdata.push(elapsed);
                 ydata.push((elapsed * 10.0).sin());
+                if log.len() % 10 == 0 {
+                    log.push(LogEntry {
+                        data: "Kek".to_string(),
+                        color: [1.0, 0.0, 0.0, 1.0],
+                    });
+                } else if log.len() % 4 == 0 {
+                    log.push(LogEntry {
+                        data: "Top".to_string(),
+                        color: [0.0, 1.0, 0.0, 1.0],
+                    });
+                } else {
+                    log.push(LogEntry {
+                        data: "Lorem Ipsum".to_string(),
+                        color: [1.0, 1.0, 1.0, 1.0],
+                    });
+                }
 
                 let now = Instant::now();
                 imgui.io_mut().update_delta_time(now - last_frame);
@@ -294,12 +318,21 @@ fn main() {
                         .position([canvas_size.width * 0.75, 20.0], Condition::Always)
                         .build(&ui, || {
                             let content_dimension = ui.content_region_avail();
-
+                            let log = &log;
                             TabBar::new(im_str!("Text Channel")).build(&ui, || {
                                 if let Some(token) = TabItem::new(im_str!("Channel A")).begin(&ui) {
                                     ChildWindow::new(im_str!("Console1")).build(&ui, || {
-                                        ui.text("TEST");
-                                        ui.text_colored([1.0, 0.0, 0.0, 1.0], "TEST");
+                                        if ui.scroll_y() < ui.scroll_max_y() - 20.0 {
+                                            log_locked = true;
+                                        } else {
+                                            log_locked = false;
+                                        }
+                                        if !log_locked {
+                                            ui.set_scroll_y(ui.scroll_max_y());
+                                        }
+                                        for LogEntry { data, color } in log {
+                                            ui.text_colored(*color, data);
+                                        }
                                     });
                                     token.end(&ui);
                                 }
