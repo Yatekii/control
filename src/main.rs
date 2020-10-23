@@ -3,7 +3,9 @@ use imgui::*;
 use imgui_wgpu::RendererConfig;
 use imgui_winit_support;
 use implot::{Colormap, ImPlotRange, Plot, PlotFlags, PlotLine};
-use std::time::Instant;
+use probe_rs::Session;
+use probe_rs_rtt::Rtt;
+use std::{fs::File, io::Write, sync::Arc, sync::Mutex, time::Instant};
 use winit::{
     dpi::LogicalSize,
     dpi::PhysicalSize,
@@ -128,6 +130,9 @@ fn main() {
 
     let mut xdata = vec![];
     let mut ydata = vec![];
+    let mut y1data = vec![];
+    let mut y2data = vec![];
+    let mut y3data = vec![];
 
     struct LogEntry {
         data: String,
@@ -136,6 +141,15 @@ fn main() {
 
     let mut log = vec![];
     let mut log_locked = false;
+
+    let mut session = Session::auto_attach("nRF52811").unwrap();
+
+    // Attach to RTT.
+    let mut rtt = Rtt::attach(Arc::new(Mutex::new(session))).unwrap();
+    let mut rtt = rtt.up_channels().take(0).unwrap();
+    let mut current_data = String::new();
+
+    let mut file = File::create("log.txt").unwrap();
 
     // Event loop
     event_loop.run(move |event, _, control_flow| {
@@ -190,24 +204,55 @@ fn main() {
             Event::RedrawEventsCleared => {
                 let delta_s = last_frame.elapsed();
                 let elapsed = start.elapsed().as_secs_f64();
-                xdata.push(elapsed);
-                ydata.push((elapsed * 10.0).sin());
-                if log.len() % 10 == 0 {
+
+                let mut buf = [0u8; 1024];
+                let count = rtt.read(&mut buf[..]).unwrap();
+
+                current_data += &String::from_utf8_lossy(&buf[..count]);
+                let lines = current_data.split('\n').collect::<Vec<_>>();
+                let data = lines[..lines.len() - 1]
+                    .iter()
+                    .map(|v| {
+                        v.split(", ")
+                            .map(|s| s.parse::<f64>().unwrap())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>();
+
+                for line in lines[..lines.len() - 1].iter() {
+                    file.write_all(line.as_bytes()).unwrap();
                     log.push(LogEntry {
-                        data: "Kek".to_string(),
-                        color: [1.0, 0.0, 0.0, 1.0],
-                    });
-                } else if log.len() % 4 == 0 {
-                    log.push(LogEntry {
-                        data: "Top".to_string(),
-                        color: [0.0, 1.0, 0.0, 1.0],
-                    });
-                } else {
-                    log.push(LogEntry {
-                        data: "Lorem Ipsum".to_string(),
-                        color: [1.0, 1.0, 1.0, 1.0],
+                        data: line.to_string(),
+                        color: [0.0, 0.0, 0.0, 1.0],
                     });
                 }
+
+                current_data = lines.last().unwrap().to_string();
+
+                for sample in data {
+                    xdata.push(elapsed);
+                    ydata.push(sample[0]);
+                    y1data.push(sample[1]);
+                    y2data.push(sample[2]);
+                    y3data.push(sample[3]);
+                }
+
+                // if log.len() % 10 == 0 {
+                //     log.push(LogEntry {
+                //         data: "Kek".to_string(),
+                //         color: [1.0, 0.0, 0.0, 1.0],
+                //     });
+                // } else if log.len() % 4 == 0 {
+                //     log.push(LogEntry {
+                //         data: "Top".to_string(),
+                //         color: [0.0, 1.0, 0.0, 1.0],
+                //     });
+                // } else {
+                //     log.push(LogEntry {
+                //         data: "Lorem Ipsum".to_string(),
+                //         color: [1.0, 1.0, 1.0, 1.0],
+                //     });
+                // }
 
                 let now = Instant::now();
                 imgui.io_mut().update_delta_time(now - last_frame);
@@ -269,47 +314,50 @@ fn main() {
                                 )
                                 .with_plot_flags(&PlotFlags::ANTIALIASED)
                                 .build(&mut plot_ui, || {
-                                    PlotLine::new("legend label").plot(&xdata, &ydata);
+                                    PlotLine::new("Current").plot(&xdata, &ydata);
+                                    PlotLine::new("Battery").plot(&xdata, &y1data);
+                                    PlotLine::new("Temperature").plot(&xdata, &y2data);
+                                    PlotLine::new("Requested").plot(&xdata, &y3data);
                                 });
                         });
 
-                    let window = imgui::Window::new(im_str!("Plot 2"));
-                    window
-                        .size(
-                            [canvas_size.width * 0.75, canvas_size.height * 0.5],
-                            Condition::Always,
-                        )
-                        .position([0.0, canvas_size.height * 0.5 + 20.0], Condition::Always)
-                        .build(&ui, || {
-                            let content_dimension = ui.content_region_avail();
+                    // let window = imgui::Window::new(im_str!("Plot 2"));
+                    // window
+                    //     .size(
+                    //         [canvas_size.width * 0.75, canvas_size.height * 0.5],
+                    //         Condition::Always,
+                    //     )
+                    //     .position([0.0, canvas_size.height * 0.5 + 20.0], Condition::Always)
+                    //     .build(&ui, || {
+                    //         let content_dimension = ui.content_region_avail();
 
-                            let s = xdata.last().map(|v| *v).unwrap_or(0.0);
+                    //         let s = xdata.last().map(|v| *v).unwrap_or(0.0);
 
-                            implot::set_colormap_from_preset(Colormap::Plasma, 1);
-                            domain::style_seaborn();
-                            Plot::new("Simple line plot")
-                                // The size call could also be omitted, though the defaults don't consider window
-                                // width, which is why we're not doing so here.
-                                .size(content_dimension[0], content_dimension[1])
-                                .y_limits(
-                                    &ImPlotRange {
-                                        Min: -1.0,
-                                        Max: 1.0,
-                                    },
-                                    Condition::FirstUseEver,
-                                )
-                                .x_limits(
-                                    &ImPlotRange {
-                                        Min: s - 20.0,
-                                        Max: s,
-                                    },
-                                    Condition::Always,
-                                )
-                                .with_plot_flags(&PlotFlags::ANTIALIASED)
-                                .build(&mut plot_ui, || {
-                                    PlotLine::new("legend label").plot(&xdata, &ydata);
-                                });
-                        });
+                    //         implot::set_colormap_from_preset(Colormap::Plasma, 1);
+                    //         domain::style_seaborn();
+                    //         Plot::new("Simple line plot")
+                    //             // The size call could also be omitted, though the defaults don't consider window
+                    //             // width, which is why we're not doing so here.
+                    //             .size(content_dimension[0], content_dimension[1])
+                    //             .y_limits(
+                    //                 &ImPlotRange {
+                    //                     Min: -1.0,
+                    //                     Max: 1.0,
+                    //                 },
+                    //                 Condition::FirstUseEver,
+                    //             )
+                    //             .x_limits(
+                    //                 &ImPlotRange {
+                    //                     Min: s - 20.0,
+                    //                     Max: s,
+                    //                 },
+                    //                 Condition::Always,
+                    //             )
+                    //             .with_plot_flags(&PlotFlags::ANTIALIASED)
+                    //             .build(&mut plot_ui, || {
+                    //                 PlotLine::new("legend label").plot(&xdata, &ydata);
+                    //             });
+                    //     });
 
                     let window = imgui::Window::new(im_str!("Term"));
                     window
